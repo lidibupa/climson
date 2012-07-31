@@ -7,9 +7,9 @@ climson:
 	@mkdir -p $(BIN)
 	$(CC) $(CFLAGS) -o $(BIN)/climson climson.c
 
-install: 
+install: climson 
 	@cp $(BIN)/climson /usr/bin/climson
-devinstall: 
+devinstall: climson
 	ln -sf $(CURDIR)/$(BIN)/climson /usr/bin/climson
 
 remove: 
