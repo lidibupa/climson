@@ -25,10 +25,10 @@
  *
  *    Description:  SMS test app
  *
- *        Version:  1.0
+ *        Version:  0.1.2
  *        Created:  07/28/2012 06:55:31 PM
  *       Revision:  none
- *       Compiler:  gcc
+ *       Compiler:  clang
  *
  *         Author:  William Dignazio (slackwill), slackwill@csh.rit.edu
  *   Organization:  
@@ -40,7 +40,76 @@
 #include <string.h> 
 #include <unistd.h> 
 #include <pwd.h> 
-#include <climson.h> 
+#include <argp.h> 
+#include <twilio.h> 
+
+/* TODO: Change to makefile version macro */ 
+const char *version = 
+	"climson-v0.1.2"; 
+const char *maintainer = 
+	"<slackwill@csh.rit.edu>"; 
+const char doc[] = 
+	"\nclimson command line utility --- a sms utility to send texts from cli.\n"
+	"In order to use this utility, you need to have an ~/.smsrc file.\n" 
+	"This is simply done by making a .smsrc file with three lines in your home dir.\n"
+	"	1. Your twilio SID\n"
+	" 	2. Your twilio Token\n" 
+	"	3. Your twilio phone #\n";
+
+static char args_doc[] = "'<TO#>' '<TXT>'";
+
+static struct argp_option options[] = { 
+  	{"Recipient",'r',"Recipient",0,"'Recipients Number'"}, 
+	{"Text", 't', "Text", 0, "'Text Body'"}, 
+	{0}
+};
+
+/* For every argument added to the options struct, 
+ * you need to add it's pointer/variable here */ 
+struct arguments { 
+	char *recipient; 
+	char *text; 
+};
+
+/* Grab/Parse arguments 
+ * Both passing in arguments, or directly specifying 
+ * the recipient and text body. If one parameter is 
+ * passed in, it will be recipient. If two are passed
+ * in they will be recipient and text body respectively.
+ * An alternative that will override the arguments is 
+ * the -r and -t options, which are optional and 
+ * specify the recipient and text body respectively.
+ */
+static int
+parse_opt (int key, char *arg, struct argp_state *state) { 
+	struct arguments *arguments = state->input; 
+	switch(key) { 
+	  	case 'r': 
+		  	arguments->recipient = arg; 
+			break; 
+		case 't': 
+			arguments->text = arg; 
+			break; 
+		case ARGP_KEY_ARG: 
+			if(state->arg_num >= 2)
+				argp_usage(state);
+			else 
+			  	switch(state->arg_num) {
+			  		case 0: 
+			  			arguments->recipient = arg;
+						break;
+			  		case 1: 
+			  			arguments->text = arg;
+						break;
+			  	}
+			break; 
+		default: 
+			return ARGP_ERR_UNKNOWN; 
+	}
+	return 0; 
+}
+
+static struct argp argp = {options, parse_opt, args_doc, doc}; 
 
 /* This is a simple sms utility for sending out text messages 
  * through the command line. You need to have a file in your 
@@ -49,15 +118,28 @@
  * charged from your climson account. 
  */
 int main(int argc, char *argv[]) { 
+	
+  	struct arguments arguments; 
+	arguments.recipient = NULL; 
+	arguments.text = NULL; 
+
+	argp_parse(&argp, argc, argv, 0, 0, &arguments); 
 
 	char *sid; 
 	char *token;
 	char *from_number; 
-
-  	struct passwd *pw = getpwuid(getuid());
+	char text[160]; 
+	char number[20]; 
+	
+	struct passwd *pw = getpwuid(getuid());
 	char path[strlen(pw->pw_dir)+strlen("/.smsrc")]; 
 	sprintf(path, "%s%s", pw->pw_dir, "/.smsrc"); 
 	FILE *fp = fopen(path, "r"); 
+	if(fp == NULL) { 
+		printf("~/.smsrc does not exist.\n"); 
+		printf("Read --help for more information\n"); 
+		exit(1);
+	}
 
 	char buffer[50]; 
 	int stage; 
@@ -72,7 +154,6 @@ int main(int argc, char *argv[]) {
 				//printf("Read sid: %s\n", sid);
 				break; 
 			case 1: // Token
-
 				token = malloc(strlen(buffer)); 
 				sprintf(token, "%s", buffer); 
 				if((newseek = strchr(token, '\n')))
@@ -94,22 +175,28 @@ int main(int argc, char *argv[]) {
 	/* Initialize the C climson library */
   	init_twilio_api(sid, token); 
 
-	char number[20]; 
-	printf("To: "); 
-	if(fgets(number, sizeof(number), stdin) != NULL) { 
-		char *newline = strchr(number, '\n'); 
-		if(newline != NULL) { 
-			*newline = '\0'; 
+	if(!arguments.recipient) {
+		printf("To: "); 
+		if(fgets(number, sizeof(number), stdin) != NULL) { 
+			char *newline = strchr(number, '\n'); 
+			if(newline != NULL) { 
+				*newline = '\0'; 
+			}
 		}
+	} else { // User has passed in an argument for recipient
+	  	strcpy(number, arguments.recipient);
 	}
 
-	char text[160]; 
-	printf("Text: "); 
-	if(fgets(text, sizeof(text), stdin) != NULL) { 
-		char *newline = strchr(text, '\n'); 
-		if(newline != NULL) { 
-			*newline = '\0'; 
+	if(!arguments.text) {
+		printf("Text: "); 
+		if(fgets(text, sizeof(text), stdin) != NULL) { 
+			char *newline = strchr(text, '\n'); 
+			if(newline != NULL) { 
+				*newline = '\0'; 
+			}
 		}
+	} else { // User had passed in an argument for text
+	  	strcpy(text, arguments.text); 
 	}
 
 	/* Twilio only accepts encoded numbers, maybe later 
@@ -129,6 +216,8 @@ int main(int argc, char *argv[]) {
 	html_encode(text, &encoded_text); 
 	//printf("Text Encoded: %s\n", encoded_text); 
 
+	/* The api makes it easy, the arguments, and user input 
+	 * are the dirty bits. Go figure. */ 
 	post_sms(from_encoded, number_encoded, encoded_text);
 
 	free(token); 
@@ -136,6 +225,8 @@ int main(int argc, char *argv[]) {
 	free(number_encoded); 
 	free(from_encoded); 
 	free(encoded_text);
+
+	printf("\n"); //TODO: Remove when json is added in
 
     return 0; 
 }
