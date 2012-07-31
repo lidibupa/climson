@@ -172,7 +172,7 @@ int main(int argc, char *argv[]) {
 		bzero(buffer, sizeof(buffer)); 
 	}
 
-	/* Initialize the C climson library */
+	/* Initialize the C twilio library */
   	init_twilio_api(sid, token); 
 
 	if(!arguments.recipient) {
